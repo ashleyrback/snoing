@@ -51,11 +51,12 @@ class Geant4Post5(localpackage.LocalPackage):
         if not os.path.exists(self.get_install_path()):
             os.makedirs(self.get_install_path())
         cmake_opts = ["-DCMAKE_INSTALL_PREFIX=%s" % self.get_install_path(), 
-                      "-DCLHEP_ROOT_DIR=%s" % self._dependency_paths[self._clhep_dep], 
+                      #"-DCLHEP_ROOT_DIR=%s" % self._dependency_paths[self._clhep_dep], 
                       "-DXERCESC_ROOT_DIR=%s" % self._dependency_paths[self._xerces_dep], 
-                      "-DGEANT4_INSTALL_DATA=ON", 
-                      "-DCLHEP_CONFIG_EXECUTABLE=%s" % \
-                          os.path.join(self._dependency_paths[self._clhep_dep], "bin/clhep-config")]
+                      "-DGEANT4_INSTALL_DATA=ON",
+                      "-DGEANT4_USE_SYSTEM_EXPAT=OFF"]
+                      #"-DCLHEP_CONFIG_EXECUTABLE=%s" % \
+                      #    os.path.join(self._dependency_paths[self._clhep_dep], "bin/clhep-config")]
         # Now set the environment, if needed
         env = {}
         if self._system.get_install_mode() == installmode.Graphical:
