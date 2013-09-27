@@ -13,6 +13,72 @@ import installmode
 import os
 import shutil
 
+class Geant4Post6NoCLHEP(localpackage.LocalPackage):
+    """ Base geant4 installer for post 4.9.6 geant versions. Does not install any of the CLHEP libraries"""
+    def __init__(self, name, system, tar_name, xerces_dep):
+        """ Initialise the geant4 package."""
+        super(Geant4Post6NoCLHEP, self).__init__(name, system)
+        self._tar_name = tar_name
+        self._xerces_dep = xerces_dep
+    def get_dependencies(self):
+        """ Return the dependency names as a list of names."""
+        dependencies = ["make", "g++", "gcc", "cmake", self._xerces_dep]
+        if self._system.get_install_mode() == installmode.Graphical:
+            dependencies.extend(["Xm", "Xt", "opengl", "Xmu", "Xi"])
+        return dependencies
+    def _is_downloaded(self):
+        """ Check if the tar file has been downloaded."""
+        return self._system.file_exists(self._tar_name)
+    def _is_installed(self):
+        """ Check if the package has been installed."""
+        installed = self._system.library_exists("libG4event", os.path.join(self.get_install_path(), "lib")) or \
+            self._system.library_exists("libG4event", os.path.join(self.get_install_path(), "lib64"))
+        if self._system.get_install_mode() == installmode.Graphical:
+            installed = installed and \
+                self._system.library_exists("libG4OpenGL", os.path.join(self.get_install_path(), "lib")) or \
+                self._system.library_exists("libG4OpenGL", os.path.join(self.get_install_path(), "lib64"))
+        return installed
+    def _download(self):
+        """ Derived classes should override this to download the package."""
+        self._system.download_file(
+            "http://geant4.web.cern.ch/geant4/support/source/" + self._tar_name)
+    def _install(self):
+        """ Install geant4, using cmake."""
+        source_path = os.path.join(self._system.get_install_path(), "%s-source" % self._name)
+        self._system.untar_file(self._tar_name, source_path, 1)
+        self._patch_timeout()
+        if not os.path.exists(self.get_install_path()):
+            os.makedirs(self.get_install_path())
+        cmake_opts = ["-DCMAKE_INSTALL_PREFIX=%s" % self.get_install_path(),
+                      "-DXERCESC_ROOT_DIR=%s" % self._dependency_paths[self._xerces_dep], 
+                      "-DGEANT4_INSTALL_DATA=ON",
+                      "-DGEANT4_USE_SYSTEM_EXPAT=OFF"]
+        # Now set the environment, if needed
+        env = {}
+        if self._system.get_install_mode() == installmode.Graphical:
+            cmake_opts.extend(["-DGEANT4_USE_XM=ON", "-DGEANT4_USE_OPENGL_X11=ON", 
+                               "-DGEANT4_USE_RAYTRACER_X11=ON" ])
+            env = {'G4VIS_BUILD_VRML_DRIVER' : "1", 'G4VIS_BUILD_OPENGLX_DRIVER' : "1", 
+                   'G4VIS_BUILD_OPENGLXM_DRIVER' : "1", 'G4VIS_BUILD_DAWN_DRIVER' : "1" }
+        cmake_opts.extend([source_path])
+        cmake_command = "cmake"
+        if self._dependency_paths["cmake"] is not None: # Special cmake installed
+            cmake_command = "%s/bin/cmake" % self._dependency_paths["cmake"]
+        self._system.configure_command(cmake_command, cmake_opts, self.get_install_path(), env, config_type="geant4")
+        self._system.execute_command("make", [], self.get_install_path(), env)
+        self._system.execute_command("make", ['install'], self.get_install_path(), env)
+    def _patch_timeout(self):
+        """ Patch the cmake scripts to increase the timeout limit, geant4.9.5.p01 fix."""
+        file_path = os.path.join(self._system.get_install_path(), 
+                                 "%s-source/cmake/Modules/Geant4InstallData.cmake" % self._name)
+        cmake_file = open(file_path, "r")
+        text = cmake_file.read()
+        cmake_file.close()
+        text = text.replace("PREFIX", "TIMEOUT 10000\n        PREFIX")
+        cmake_file = open(file_path, "w")
+        cmake_file.write(text)
+        cmake_file.close()
+
 class Geant4Post5(localpackage.LocalPackage):
     """ Base geant4 installer for post 4.9.5 geant versions. This is sooooo much nicer"""
     def __init__(self, name, system, tar_name, clhep_dep, xerces_dep):
@@ -50,19 +116,18 @@ class Geant4Post5(localpackage.LocalPackage):
         self._patch_timeout()
         if not os.path.exists(self.get_install_path()):
             os.makedirs(self.get_install_path())
-        cmake_opts = ["-DCMAKE_INSTALL_PREFIX=%s" % self.get_install_path(), 
-                      #"-DCLHEP_ROOT_DIR=%s" % self._dependency_paths[self._clhep_dep], 
-                      "-DXERCESC_ROOT_DIR=%s" % self._dependency_paths[self._xerces_dep], 
+        cmake_opts = ["-DCMAKE_INSTALL_PREFIX=%s" % self.get_install_path(),
+                      "-DCLHEP_ROOT_DIR=%s" % self._dependency_paths[self._clhep_dep],
+                      "-DXERCESC_ROOT_DIR=%s" % self._dependency_paths[self._xerces_dep],
                       "-DGEANT4_INSTALL_DATA=ON",
-                      "-DGEANT4_USE_SYSTEM_EXPAT=OFF"]
-                      #"-DCLHEP_CONFIG_EXECUTABLE=%s" % \
-                      #    os.path.join(self._dependency_paths[self._clhep_dep], "bin/clhep-config")]
+                      "-DCLHEP_CONFIG_EXECUTABLE=%s" % \
+                          os.path.join(self._dependency_paths[self._clhep_dep], "bin/clhep-config")]
         # Now set the environment, if needed
         env = {}
         if self._system.get_install_mode() == installmode.Graphical:
-            cmake_opts.extend(["-DGEANT4_USE_XM=ON", "-DGEANT4_USE_OPENGL_X11=ON", 
+            cmake_opts.extend(["-DGEANT4_USE_XM=ON", "-DGEANT4_USE_OPENGL_X11=ON",
                                "-DGEANT4_USE_RAYTRACER_X11=ON" ])
-            env = {'G4VIS_BUILD_VRML_DRIVER' : "1", 'G4VIS_BUILD_OPENGLX_DRIVER' : "1", 
+            env = {'G4VIS_BUILD_VRML_DRIVER' : "1", 'G4VIS_BUILD_OPENGLX_DRIVER' : "1",
                    'G4VIS_BUILD_OPENGLXM_DRIVER' : "1", 'G4VIS_BUILD_DAWN_DRIVER' : "1" }
         cmake_opts.extend([source_path])
         cmake_command = "cmake"
@@ -73,12 +138,12 @@ class Geant4Post5(localpackage.LocalPackage):
         self._system.execute_command("make", ['install'], self.get_install_path(), env)
     def _patch_timeout(self):
         """ Patch the cmake scripts to increase the timeout limit, geant4.9.5.p01 fix."""
-        file_path = os.path.join(self._system.get_install_path(), 
+        file_path = os.path.join(self._system.get_install_path(),
                                  "%s-source/cmake/Modules/Geant4InstallData.cmake" % self._name)
         cmake_file = open(file_path, "r")
         text = cmake_file.read()
         cmake_file.close()
-        text = text.replace("PREFIX", "TIMEOUT 10000\n        PREFIX")
+        text = text.replace("PREFIX", "TIMEOUT 10000\n PREFIX")
         cmake_file = open(file_path, "w")
         cmake_file.write(text)
         cmake_file.close()
